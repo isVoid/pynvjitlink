@@ -51,6 +51,7 @@ class PatchedLinker(Linker):
             opts.append(f"-maxrregcount={max_registers}")
         if lineinfo:
             opts.append("-lineinfo")
+        opts.append('-lto')
 
         self._linker = NvJitLinker(*opts)
 
@@ -64,6 +65,15 @@ class PatchedLinker(Linker):
 
     def add_ptx(self, ptx, name='<cudapy-ptx>'):
         self._linker.add_ptx(ptx, name)
+
+    def add_fatbin(self, fatbin, name='<external-fatbin>'):
+        self._linker.add_fatbin(fatbin, name)
+
+    def add_ltoir(self, ltoir, name='<external-ltoir>'):
+        self._linker.add_ltoir(ltoir, name)
+
+    def add_object(self, obj, name='<external-object>'):
+        self._linker.add_object(obj, name)
 
     def add_file(self, path, kind):
         try:
@@ -81,6 +91,8 @@ class PatchedLinker(Linker):
             raise LinkerError("Don't know how to link archives")
         elif kind == FILE_EXTENSION_MAP['ptx']:
             return self.add_ptx(data, name)
+        elif kind == FILE_EXTENSION_MAP['o']:
+            fn = self._linker.add_object
         else:
             raise LinkerError(f"Don't know how to link {kind}")
 
