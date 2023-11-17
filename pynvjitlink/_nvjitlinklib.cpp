@@ -62,8 +62,10 @@ static PyObject *create(PyObject *self, PyObject *args) {
 
   Py_ssize_t n_args = PyTuple_Size(args);
 
+  bool disable_cache = getenv("PYNVJITLINK_DISABLE_CACHE");
+
   try {
-    jitlink_options = new const char *[n_args];
+    jitlink_options = new const char *[n_args + disable_cache];
   } catch (const std::bad_alloc &) {
     PyErr_NoMemory();
     return nullptr;
@@ -79,6 +81,10 @@ static PyObject *create(PyObject *self, PyObject *args) {
     }
 
     jitlink_options[i] = PyUnicode_AsUTF8AndSize(py_option, nullptr);
+  }
+
+  if (disable_cache) {
+    jitlink_options[n_args] = "--no-cache";
   }
 
   try {
