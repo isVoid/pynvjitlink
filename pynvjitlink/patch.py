@@ -36,10 +36,19 @@ if _numba_version_ok:
         Linker,
         LinkerError,
     )
+
+    if ver >= (0, 59):
+        from numba.cuda.codegen import CUDACodeLibrary, JITCUDACodegen
+        from numba.cuda.cudadrv import devices, nvvm
+    else:
+        CUDACodeLibrary = object
+        JITCUDACodegen = object
 else:
-    # Prevent the definition of PatchedLinker failing if we have no Numba
-    # Linker - it won't be used anyway.
+    # Prevent the definitions of patched classes failing if we have no Numba
+    # equivalents - they won't be used anyway.
     Linker = object
+    CUDACodeLibrary = object
+    JITCUDACodegen = object
 
 
 class PatchedLinker(Linker):
@@ -154,9 +163,56 @@ def new_patched_linker(
     )
 
 
+class LTOCUDACodeLibrary(CUDACodeLibrary):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._ltoir_cache = {}
+
+    def get_ltoir(self, cc=None):
+        if cc is None:
+            device = devices.get_context().device
+            cc = device.compute_capability
+
+        ltoir = self._ltoir_cache.get(cc, None)
+        if ltoir:
+            return ltoir
+
+        arch = nvvm.get_arch_option(*cc)
+        options = self._nvvm_options.copy()
+        options['arch'] = arch
+        options['gen-lto'] = None
+
+        irs = self.llvm_strs
+        ltoir = nvvm.llvm_to_ptx(irs, **options)
+        self._ltoir_cache[cc] = ltoir
+
+        return ltoir
+
+
+class JITLTOCUDACodegen(JITCUDACodegen):
+    _library_class = LTOCUDACodeLibrary
+
+
 def patch_numba_linker():
     if not _numba_version_ok:
         msg = f"Cannot patch Numba: {_numba_error}"
         raise RuntimeError(msg)
 
     Linker.new = new_patched_linker
+
+
+def patch_numba_for_lto():
+    if not _numba_version_ok:
+        msg = f"Cannot patch Numba: {_numba_error}"
+        raise RuntimeError(msg)
+
+    if ver < (0, 59):
+        msg = f"Numba version 0.59 needed for LTO - you have {ver[0]}.{ver[1]}"
+        raise RuntimeError(msg)
+
+    from numba.cuda.descriptor import cuda_target
+    lto_codegen = JITLTOCUDACodegen("numba.cuda.jit")
+    cuda_target.target_context._internal_codegen = lto_codegen
+
+    # Next step - try this out, see if patching appears to be ok.
+    # Then, update it to make LTO possible / optional
