@@ -1,9 +1,12 @@
 # Copyright (c) 2023, NVIDIA CORPORATION.
 
+import os
 from enum import Enum
 from pynvjitlink import _nvjitlinklib
 
 import weakref
+
+from numba.cuda.cudadrv.driver import FILE_EXTENSION_MAP
 
 
 class InputType(Enum):

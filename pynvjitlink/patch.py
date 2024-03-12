@@ -120,10 +120,11 @@ class PatchedLinker(Linker):
         if lineinfo:
             options.append("-lineinfo")
         if lto:
-            options.append("-lto")
+            options.append("-dlto")
         if additional_flags is not None:
             options.extend(additional_flags)
 
+        print(options)
         self._linker = NvJitLinker(*options)
         self.options = options
 
@@ -147,7 +148,12 @@ class PatchedLinker(Linker):
     def add_object(self, obj, name="<external-object>"):
         self._linker.add_object(obj, name)
 
-    def add_file_guess_ext(self, path_or_code):
+    def add_cu_file(self, path, lto=False):
+        with open(path, "rb") as f:
+            cu = f.read()
+        self.add_cu(cu, os.path.basename(path), link_lto=lto)
+
+    def add_file_guess_ext(self, path_or_code, link_lto=False):
         # Numba's add_file_guess_ext expects to always be passed a path to a
         # file that it will load from the filesystem to link. We augment it
         # here with the ability to provide a file from memory.
@@ -155,14 +161,14 @@ class PatchedLinker(Linker):
         # To maintain compatibility with the original interface, all strings
         # are treated as paths in the filesystem.
         if isinstance(path_or_code, str):
-            return super().add_file_guess_ext(path_or_code)
+            return super().add_file_guess_ext(path_or_code, link_lto=link_lto)
 
         # Otherwise, we should have been given a LinkableCode object
         if not isinstance(path_or_code, LinkableCode):
             raise TypeError("Expected path to file or a LinkableCode object")
 
         if path_or_code.kind == "cu":
-            self.add_cu(path_or_code.data, path_or_code.name)
+            self.add_cu(path_or_code.data, path_or_code.name, link_lto=link_lto)
         else:
             self.add_data(path_or_code.data, path_or_code.kind, path_or_code.name)
 
@@ -195,21 +201,28 @@ class PatchedLinker(Linker):
         except NvJitLinkError as e:
             raise LinkerError from e
 
-    def add_cu(self, cu, name):
+    def add_cu(self, cu, name, link_lto=False):
         with driver.get_active_context() as ac:
             dev = driver.get_device(ac.devnum)
             cc = dev.compute_capability
 
-        ptx, log = nvrtc.compile(cu, name, cc)
+        if link_lto:
+            ltoir, log = nvrtc.compile(cu, name, cc, extra_cflags=["-dlto"])
 
-        if config.DUMP_ASSEMBLY:
-            print(("ASSEMBLY %s" % name).center(80, "-"))
-            print(ptx)
-            print("=" * 80)
+            # Link the program's PTX using the normal linker mechanism
+            ltoir_name = os.path.splitext(name)[0] + ".ltoir"
+            self.add_ltoir(ltoir, ltoir_name)
+        else:
+            ptx, log = nvrtc.compile(cu, name, cc)
 
-        # Link the program's PTX using the normal linker mechanism
-        ptx_name = os.path.splitext(name)[0] + ".ptx"
-        self.add_ptx(ptx.encode(), ptx_name)
+            if config.DUMP_ASSEMBLY:
+                print(("ASSEMBLY %s" % name).center(80, "-"))
+                print(ptx)
+                print("=" * 80)
+
+            # Link the program's PTX using the normal linker mechanism
+            ptx_name = os.path.splitext(name)[0] + ".ptx"
+            self.add_ptx(ptx.encode(), ptx_name)
 
     def complete(self):
         try:
