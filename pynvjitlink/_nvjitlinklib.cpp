@@ -79,6 +79,7 @@ static PyObject *create(PyObject *self, PyObject *args) {
     }
 
     jitlink_options[i] = PyUnicode_AsUTF8AndSize(py_option, nullptr);
+    printf("Jitlink option %ld: %s\n", i, jitlink_options[i]);
   }
 
   try {
@@ -144,6 +145,17 @@ static PyObject *add_data(PyObject *self, PyObject *args) {
 
   const void *data = buf.buf;
   size_t size = buf.len;
+
+  {
+    printf("Data Name: %s\n", name);
+    printf("Input type: %d\n", static_cast<int>(input_type));
+    const unsigned char *data_str = static_cast<const unsigned char *>(data);
+    for (size_t i = 0; i < size; ++i) {
+      printf("%02x ", data_str[i]);
+    }
+    printf("\n");
+  }
+
   nvJitLinkResult res =
       nvJitLinkAddData(*jitlink, input_type, data, size, name);
 

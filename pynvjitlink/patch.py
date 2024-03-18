@@ -124,7 +124,6 @@ class PatchedLinker(Linker):
         if additional_flags is not None:
             options.extend(additional_flags)
 
-        print(options)
         self._linker = NvJitLinker(*options)
         self.options = options
 
